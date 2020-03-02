@@ -188,47 +188,56 @@ void move(struct game* g, short way)
 }
 
 
+//	screen menu structure - each screen has its own
 struct regmenu_ screen_data = {
-  55,
-  1,
-  0,
-  dispatch_screen,
-  key_press_screen,
-  screen_job,
-  0,
-  show_screen,
-  0,
-  0
-};
+						55,							//	main screen number, value 0-255, for custom windows it is better to take from 50 and above
+						1,							//	auxiliary screen number (usually 1)
+						0,							//	0
+						dispatch_screen,			//	pointer to the function handling touch, swipe, long press
+						key_press_screen, 			//	pointer to the function handling pressing the button
+						screen_job,					//	pointer to the callback function of the timer  
+						0,							//	0
+						show_screen,				//	pointer to the screen display function
+						0,							//	
+						0							//	long press of the button
+					};
 
-int main(int param0, char** argv){
-  show_screen((void*) param0);
+int main(int param0, char** argv){	//	here the variable argv is not defined
+	show_screen((void*) param0);
 }
 
 void show_screen (void *param0) {
-  struct app_data_** 	app_data_p = get_ptr_temp_buf_2(); 	//	pointer to a pointer to screen data
-  struct app_data_ *	app_data;					//	pointer to screen data
-  if ( (param0 == *app_data_p) && get_var_menu_overlay()){
-    app_data = *app_data_p;
-    *app_data_p = NULL;
-    reg_menu(&screen_data, 0);
-    *app_data_p = app_data;
-  } else {
-    reg_menu(&screen_data, 0);
-    *app_data_p = (struct app_data_ *)pvPortMalloc(sizeof(struct app_data_));
-    app_data = *app_data_p;
-    _memclr(app_data, sizeof(struct app_data_));
-    app_data->proc = param0;
-    if ( param0 && app_data->proc->ret_f )
-      app_data->ret_f = app_data->proc->elf_finish;
-    else
-      app_data->ret_f = show_watchface;
-    struct game g;
-    begin(&g, app_data->proc->index_listed);
-    app_data->screen = 1;
-    _memcpy (&app_data->game, &g, sizeof(g));
-  }
-  draw_screen(&app_data->game);
+    struct app_data_** 	app_data_p = get_ptr_temp_buf_2(); 	//	pointer to a pointer to screen data
+    struct app_data_ *	app_data;					//	pointer to screen data
+    
+    if ( (param0 == *app_data_p) && get_var_menu_overlay()){        // return from the overlay screen (incoming call, notification, alarm, target, etc.)
+        app_data = *app_data_p;                                     //   here we perform actions when returning from the overlay screen: restore data, etc.
+        *app_data_p = NULL;
+        reg_menu(&screen_data, 0);
+        *app_data_p = app_data;
+        
+    } else {            // if the function is started for the first time i.e. from the menu 
+        reg_menu(&screen_data, 0);                          // create a screen (register in the system) 
+        // allocate the necessary memory and place the data in it (the memory by the pointer stored at temp_buf_2 is released automatically by the function reg_menu of another screen)
+        *app_data_p = (struct app_data_ *)pvPortMalloc(sizeof(struct app_data_));
+        app_data = *app_data_p;                             //	data pointer
+        _memclr(app_data, sizeof(struct app_data_));        // clear the memory for data
+        app_data->proc = param0;                            // save param0 value, a pointer to the data of the running process structure Elf_proc_ 
+        
+        // remember the address of the pointer to the function you need to return to after finishing this screen
+        if ( param0 && app_data->proc->ret_f )              //	if the return pointer is passed, then return to it
+            app_data->ret_f = app_data->proc->elf_finish;
+        else                                                //	if not, to the watchface
+            app_data->ret_f = show_watchface;
+
+        // start the game
+        struct game g;
+        begin(&g, app_data->proc->index_listed);
+        app_data->screen = 1;
+        _memcpy (&app_data->game, &g, sizeof(g));
+        }
+        
+    draw_screen(&app_data->game);
 }
 
 void key_press_screen(){
@@ -236,12 +245,20 @@ void key_press_screen(){
   struct app_data_ *	app_data = *app_data_p;
   struct game *g = &app_data->game;
   struct game placeholder;
-
+  
+  // save game state to 
   ElfWriteSettings(app_data->proc->index_listed, g,  0, sizeof(placeholder));
+  // call the return function (usually this is the start menu), specify the address of the function of our application as a parameter
   show_menu_animate(app_data->ret_f, (unsigned int)show_screen, ANIMATE_RIGHT);
 };
 
 void screen_job(){
+    // if necessary, you can use the screen data in this function
+ //   struct app_data_** 	app_data_p = get_ptr_temp_buf_2(); 	//	pointer to pointer to screen data  
+ //   struct app_data_ *	app_data = *app_data_p;				//	pointer to screen data
+
+    // do periodic action: animation, counter increase, screen update,
+    // rendering the interface, update (transfer to video memory) the screen
 }
 
 int dispatch_screen (void *param){
@@ -254,21 +271,22 @@ int dispatch_screen (void *param){
     case GESTURE_CLICK: {
                           vibrate(1,50,0);
                           switch (app_data->screen){
-                            case 1: {
+                            case 1: {       // score screen
                                       app_data->screen = 2;
                                       draw_score_screen(g->moves, g->score, g->record);
                                       break;
                                     }
-                            case 2: {
+                            case 2: {       // main menu
                                       if ( ( gest->touch_pos_y >143) && ( gest->touch_pos_y <= 176)  && ( gest->touch_pos_x >= 1) &&  ( gest->touch_pos_x <= 176) ){
                                         app_data->screen = 3;
                                         set_bg_color(COLOR_WHITE);
                                         fill_screen_bg();
+                                            // Displaying the embedded res - QR code
                                         show_elf_res_by_id(app_data->proc->index_listed, 0, 24, 10);
                                         set_bg_color(COLOR_WHITE);
                                         set_fg_color(COLOR_BLACK);
                                         text_out_center("by Claudio Benvenuti", 88, 145);
-
+                                            // Drawing the screen
                                         repaint_screen_lines(0, 176);
                                       } else if ( ( gest->touch_pos_y >90) && ( gest->touch_pos_y < 133)  && ( gest->touch_pos_x >= 1) &&  ( gest->touch_pos_x <= 100) ){
                                         app_data->screen = 4;
@@ -282,6 +300,7 @@ int dispatch_screen (void *param){
                                             g->undo[i][y] = tmp;
                                           }
                                         }
+
                                         app_data->screen = 1;
                                         draw_board(g);
                                       } else {

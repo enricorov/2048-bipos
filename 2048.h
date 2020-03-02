@@ -20,11 +20,13 @@ struct game {
   unsigned int record;
 };
 
+// the data structure for our screen
 struct app_data_ {
-  void* 	ret_f;
-  struct game game;
-  short screen;
-  Elf_proc_* proc;
+        void* 	    ret_f;					//	the address of the return function
+
+        struct      game game;
+        short       screen;
+        Elf_proc_*  proc;
 };
 
 short random_spot();
